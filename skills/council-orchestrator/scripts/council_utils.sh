@@ -766,8 +766,17 @@ config_set() {
         fi
     fi
 
+    # Ensure the file ends with a newline so appends don't join the last line.
+    if [[ -s "$COUNCIL_CONFIG_FILE" ]]; then
+        local last_byte
+        last_byte="$(tail -c 1 "$COUNCIL_CONFIG_FILE" | LC_ALL=C od -An -t u1 | tr -d '[:space:]' || true)"
+        if [[ -n "$last_byte" && "$last_byte" != "10" ]]; then
+            printf '\n' >> "$COUNCIL_CONFIG_FILE"
+        fi
+    fi
+
     # Append new value
-    echo "${key}=${value}" >> "$COUNCIL_CONFIG_FILE"
+    printf '%s\n' "${key}=${value}" >> "$COUNCIL_CONFIG_FILE"
     success_msg "Set $key=$value"
 }
 

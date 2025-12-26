@@ -112,8 +112,29 @@ else
 fi
 
 if [[ $RUN_CHAIRMAN -eq 1 ]]; then
-    progress_msg "Stage 3: chairman synthesis..."
-    "$SCRIPT_DIR/run_chairman_cli.sh" "$OUTPUT_DIR"
+    CHAIRMAN_PROVIDER_DEFAULT="${COUNCIL_CHAIRMAN_PROVIDER:-codex}"
+    CHAIRMAN_PROVIDER="$(config_get "chairman_provider" "$CHAIRMAN_PROVIDER_DEFAULT")"
+    progress_msg "Stage 3: chairman synthesis (provider=$CHAIRMAN_PROVIDER)..."
+
+    case "$CHAIRMAN_PROVIDER" in
+        codex)
+            "$SCRIPT_DIR/run_chairman_codex_cli.sh" "$OUTPUT_DIR"
+            ;;
+        claude)
+            "$SCRIPT_DIR/run_chairman_cli.sh" "$OUTPUT_DIR"
+            ;;
+        auto)
+            if command -v codex &>/dev/null; then
+                "$SCRIPT_DIR/run_chairman_codex_cli.sh" "$OUTPUT_DIR"
+            else
+                "$SCRIPT_DIR/run_chairman_cli.sh" "$OUTPUT_DIR"
+            fi
+            ;;
+        *)
+            error_msg "Unknown chairman_provider: $CHAIRMAN_PROVIDER (expected: codex|claude|auto)"
+            exit 1
+            ;;
+    esac
     success_msg "Council run complete (Stage 1 + Stage 2 + Stage 3)"
 else
     success_msg "Council orchestration complete (Stage 1 + Stage 2)"

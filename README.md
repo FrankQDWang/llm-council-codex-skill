@@ -97,6 +97,7 @@
 - `enabled_members`：参与成员（默认 `claude,codex,gemini`）
 - `min_quorum`：最小法定人数（默认 3）
 - `require_all_members`：是否强制 3/3（默认 1；为 0 时允许缺席成员但会降级运行）
+- `chairman_provider`：Stage 3 综合裁决使用哪个 CLI（`codex|claude|auto`，默认 `codex`）
 - `timeout`：每个 CLI 调用超时（秒）
 - `max_prompt_length`：最大输入字符数（默认较大；超长问题可继续调高）
 

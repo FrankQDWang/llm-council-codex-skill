@@ -319,6 +319,17 @@ This script handles all of Phase 2 automatically.
 ### Overview
 The chairman sub-agent analyzes all Stage 1 responses and Stage 2 peer reviews to generate a final consensus report.
 
+### Chairman Provider Selection
+
+Stage 3 can be run using either:
+- `claude` (Claude CLI prompt-based chairman)
+- `codex` (Codex CLI synthesis; writes `final_report.md` from stdout)
+- `auto` (prefers `codex` if available, otherwise `claude`)
+
+Configuration:
+- Config file key: `chairman_provider=codex|claude|auto` (default `codex`)
+- Or env override: `COUNCIL_CHAIRMAN_PROVIDER=codex|claude|auto`
+
 ### Manual Implementation
 
 #### Step 3.1: Generate Chairman Prompt
@@ -511,6 +522,7 @@ check_stage1_quorum || {
 | `COUNCIL_MIN_QUORUM` | `3` | Minimum responses required |
 | `COUNCIL_MAX_PROMPT_LENGTH` | `100000` | Maximum query length (chars) |
 | `COUNCIL_CLI_TIMEOUT` | `120` | CLI timeout (seconds) |
+| `COUNCIL_CHAIRMAN_PROVIDER` | `codex` | Stage 3 provider (`codex|claude|auto`) |
 | `COUNCIL_CONFIG_FILE` | `~/.council/config` | Config file location |
 
 ### Configuration File
@@ -522,6 +534,7 @@ check_stage1_quorum || {
 enabled_members=claude,codex,gemini
 min_quorum=3
 require_all_members=1
+chairman_provider=codex
 max_prompt_length=100000
 timeout=120
 ```
