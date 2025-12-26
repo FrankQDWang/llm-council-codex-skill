@@ -4,12 +4,16 @@
 #
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/council_utils.sh"
+
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  LLM Council - Dependency Verification"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
 required_ok=true
+STRICT_ALL_MEMBERS="$(config_get "require_all_members" "1")"
 
 echo "Required:"
 if command -v jq &>/dev/null; then
@@ -26,18 +30,38 @@ else
     required_ok=false
 fi
 
-echo ""
-echo "Optional:"
-if command -v codex &>/dev/null; then
-    echo "  ✅ codex   : $(codex --version 2>/dev/null | head -n1 || true)"
-else
-    echo "  ℹ️  codex   : missing (optional)"
+if [[ "$STRICT_ALL_MEMBERS" == "1" || "$STRICT_ALL_MEMBERS" == "true" ]]; then
+    if command -v codex &>/dev/null; then
+        echo "  ✅ codex   : $(codex --version 2>/dev/null | head -n1 || true)"
+    else
+        echo "  ❌ codex   : missing (strict mode requires Codex)"
+        required_ok=false
+    fi
+
+    if command -v gemini &>/dev/null; then
+        echo "  ✅ gemini  : $(gemini --version 2>/dev/null | head -n1 || true)"
+    else
+        echo "  ❌ gemini  : missing (strict mode requires Gemini)"
+        required_ok=false
+    fi
 fi
 
-if command -v gemini &>/dev/null; then
-    echo "  ✅ gemini  : $(gemini --version 2>/dev/null | head -n1 || true)"
+echo ""
+echo "Optional:"
+if [[ "$STRICT_ALL_MEMBERS" == "1" || "$STRICT_ALL_MEMBERS" == "true" ]]; then
+    echo "  (none; strict mode enabled)"
 else
-    echo "  ℹ️  gemini  : missing (optional)"
+    if command -v codex &>/dev/null; then
+        echo "  ✅ codex   : $(codex --version 2>/dev/null | head -n1 || true)"
+    else
+        echo "  ℹ️  codex   : missing (optional)"
+    fi
+
+    if command -v gemini &>/dev/null; then
+        echo "  ✅ gemini  : $(gemini --version 2>/dev/null | head -n1 || true)"
+    else
+        echo "  ℹ️  gemini  : missing (optional)"
+    fi
 fi
 
 echo ""
@@ -48,4 +72,3 @@ fi
 
 echo "❌ Missing required dependencies."
 exit 1
-

@@ -46,7 +46,8 @@ echo "Configuration:"
 config_list
 
 enabled_members="$(config_get "enabled_members" "claude,codex,gemini")"
-min_quorum="$(config_get "min_quorum" "2")"
+min_quorum="$(config_get "min_quorum" "3")"
+strict_all_members="$(config_get "require_all_members" "1")"
 
 available=0
 [[ "$enabled_members" == *"claude"* ]] && command -v claude &>/dev/null && ((available++)) || true
@@ -57,10 +58,19 @@ echo "Council Readiness:"
 echo "  Enabled members : $enabled_members"
 echo "  Available now   : $available/3"
 echo "  Min quorum      : $min_quorum"
-if [[ "$available" -ge "$min_quorum" ]]; then
-    echo "  Status          : ✅ Ready"
+echo "  Strict mode     : $strict_all_members (require_all_members)"
+if [[ "$strict_all_members" == "1" || "$strict_all_members" == "true" ]]; then
+    if [[ "$enabled_members" == *"claude"* && "$enabled_members" == *"codex"* && "$enabled_members" == *"gemini"* && "$available" -eq 3 ]]; then
+        echo "  Status          : ✅ Ready"
+    else
+        echo "  Status          : ⚠️ Not Ready (strict mode requires 3/3 enabled and available)"
+    fi
 else
-    echo "  Status          : ⚠️ Not Ready (insufficient quorum)"
+    if [[ "$available" -ge "$min_quorum" ]]; then
+        echo "  Status          : ✅ Ready"
+    else
+        echo "  Status          : ⚠️ Not Ready (insufficient quorum)"
+    fi
 fi
 echo ""
 
@@ -75,4 +85,3 @@ if [[ -d ".council" ]]; then
     echo "  Final report  : $report_ok"
     echo ""
 fi
-

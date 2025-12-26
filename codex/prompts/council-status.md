@@ -1,4 +1,8 @@
-# /council-status
+---
+description: Show council CLI/config readiness.
+---
+
+# LLM Council Status (prompt: `council-status`)
 
 Show readiness and configuration for LLM Council in this project.
 
@@ -6,4 +10,3 @@ Show readiness and configuration for LLM Council in this project.
 CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 "$CODEX_HOME/skills/council-orchestrator/scripts/council_status.sh"
 ```
-

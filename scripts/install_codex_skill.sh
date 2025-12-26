@@ -35,6 +35,12 @@ copy_dir() {
 
 mkdir -p "$CODEX_HOME/skills" "$CODEX_HOME/prompts"
 
+# Optional helper binary
+mkdir -p "$CODEX_HOME/bin"
+backup_if_exists "$CODEX_HOME/bin/council"
+cp -f "$REPO_ROOT/bin/council" "$CODEX_HOME/bin/council"
+chmod +x "$CODEX_HOME/bin/council" 2>/dev/null || true
+
 # Skills
 backup_if_exists "$CODEX_HOME/skills/council-orchestrator"
 backup_if_exists "$CODEX_HOME/skills/council-chairman"
@@ -57,4 +63,5 @@ done
 chmod +x "$CODEX_HOME/skills/council-orchestrator/scripts/"*.sh 2>/dev/null || true
 
 echo "Installed to: $CODEX_HOME" >&2
-echo "Try in Codex CLI: /council \"your question\"" >&2
+echo "Try in Codex CLI: -/prompts:council \"your question\"" >&2
+echo "Or from a terminal: $CODEX_HOME/bin/council \"your question\"" >&2

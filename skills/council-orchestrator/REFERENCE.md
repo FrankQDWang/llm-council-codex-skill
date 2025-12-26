@@ -496,7 +496,7 @@ check_stage1_quorum || {
 ```
 
 **Quorum Requirements:**
-- Default: MIN_QUORUM=2
+- Default: MIN_QUORUM=3
 - Override: `export COUNCIL_MIN_QUORUM=1`
 
 ---
@@ -508,8 +508,8 @@ check_stage1_quorum || {
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `COUNCIL_DIR` | `.council` | Working directory for council files |
-| `COUNCIL_MIN_QUORUM` | `2` | Minimum responses required |
-| `COUNCIL_MAX_PROMPT_LENGTH` | `10000` | Maximum query length (chars) |
+| `COUNCIL_MIN_QUORUM` | `3` | Minimum responses required |
+| `COUNCIL_MAX_PROMPT_LENGTH` | `100000` | Maximum query length (chars) |
 | `COUNCIL_CLI_TIMEOUT` | `120` | CLI timeout (seconds) |
 | `COUNCIL_CONFIG_FILE` | `~/.council/config` | Config file location |
 
@@ -520,8 +520,9 @@ check_stage1_quorum || {
 **Format:**
 ```
 enabled_members=claude,codex,gemini
-min_quorum=2
-max_prompt_length=10000
+min_quorum=3
+require_all_members=1
+max_prompt_length=100000
 timeout=120
 ```
 

@@ -1,6 +1,6 @@
 # LLM Council（Codex Skill 版）
 
-这是一个**本地可用的 Codex CLI Skill**，提供 `/council "问题"` 触发命令，把同一个问题并行交给多个模型（Claude、Codex、可选 Gemini）：
+这是一个**本地可用的 Codex CLI Skill**，把同一个问题并行交给多个模型（Claude、Codex、Gemini）：
 
 1) **Stage 1**：并行收集观点  
 2) **Stage 2**：交叉评审（peer review）  
@@ -14,13 +14,11 @@
 
 ## 依赖
 
-必需：
+必需（默认严格模式 require_all_members=1）：
+- `claude`（Claude Code CLI）
 - `codex`（Codex CLI）
-- `claude`（Claude Code CLI，用于 Stage 1 的 Claude 成员 + Stage 3 的 Chairman）
-- `jq`（用于部分 JSON/安全校验与脚本处理）
-
-可选：
 - `gemini`（Google Gemini CLI）
+- `jq`（用于部分 JSON/安全校验与脚本处理）
 
 ---
 
@@ -34,52 +32,71 @@
 
 它会把以下内容安装到你的 Codex Home（默认 `~/.codex`）：
 - skills：`council-orchestrator`、`council-chairman`
-- prompts：`/council`、`/council-cleanup`、`/council-help`、`/council-status`、`/council-config`、`/council-verify-deps`
+- prompts：`council`、`council-cleanup`、`council-help`、`council-status`、`council-config`、`council-verify-deps`
+- helper：`~/.codex/bin/council`（可选，给终端用）
 
 提示：安装后如未立刻生效，重启一次 Codex CLI。
 
 ---
 
-## 使用
+## 使用（Codex 对话里）
 
-在任意项目目录打开 Codex CLI，然后直接运行：
+推荐（问题可以直接跟在后面）：
 
 ```text
-/council "你的问题（可很长，数千字也可以）"
+-/prompts:council 你的问题（可很长）
+```
+
+说明：Codex CLI 目前不会从 `~/.codex/prompts/` 动态注册新的 `/council` 这类 slash command；因此请使用 `-/prompts:...`（或 `/prompts:...`）形式调用。
+
+如果你更想用 `/prompts:...`，注意它**只能接收 key=value** 形式：
+
+```text
+/prompts:council ARGUMENTS="你的问题"
 ```
 
 清理本项目的临时工作目录：
 
 ```text
-/council-cleanup
+-/prompts:council-cleanup
 ```
 
 查看帮助/状态：
 
 ```text
-/council-help
-/council-status
-/council-verify-deps
+-/prompts:council-help
+-/prompts:council-status
+-/prompts:council-verify-deps
+```
+
+## 使用（终端里，可选）
+
+安装脚本会放一个 helper 到 `~/.codex/bin/council`，你可以在任意项目目录运行：
+
+```bash
+~/.codex/bin/council "你的问题"
 ```
 
 ---
 
 ## 配置（`~/.council/config`）
 
-配置文件是简单的 `key=value`，可用 `/council-config` 管理：
+配置文件是简单的 `key=value`，可用 `-/prompts:council-config` 管理：
 
 ```text
-/council-config
-/council-config set enabled_members claude,codex
-/council-config set min_quorum 2
-/council-config set timeout 180
-/council-config set max_prompt_length 200000
-/council-config reset
+-/prompts:council-config
+-/prompts:council-config set enabled_members claude,codex,gemini
+-/prompts:council-config set min_quorum 3
+-/prompts:council-config set require_all_members 1
+-/prompts:council-config set timeout 600
+-/prompts:council-config set max_prompt_length 200000
+-/prompts:council-config reset
 ```
 
 常用键：
 - `enabled_members`：参与成员（默认 `claude,codex,gemini`）
-- `min_quorum`：最小法定人数（peer review 至少需要 2；如只想单模型跑通可设为 1）
+- `min_quorum`：最小法定人数（默认 3）
+- `require_all_members`：是否强制 3/3（默认 1；为 0 时允许缺席成员但会降级运行）
 - `timeout`：每个 CLI 调用超时（秒）
 - `max_prompt_length`：最大输入字符数（默认较大；超长问题可继续调高）
 
@@ -98,12 +115,12 @@
 
 ## 常见问题
 
-### 1) Gemini 已安装但经常卡住/没配置好
+### 1) Gemini 没有输出 / 缺席
 
-直接禁用 Gemini：
+默认严格模式会直接失败。先确保 `gemini` CLI 可用并已登录/配置好；或者显式关闭严格模式：
 
 ```text
-/council-config set enabled_members claude,codex
+-/prompts:council-config set require_all_members 0
 ```
 
 ### 2) 超长问题仍然被拒绝
@@ -111,14 +128,7 @@
 把上限调大：
 
 ```text
-/council-config set max_prompt_length 300000
-```
-
-### 3) 只想快速跑通（只用 Claude）
-
-```text
-/council-config set enabled_members claude
-/council-config set min_quorum 1
+-/prompts:council-config set max_prompt_length 300000
 ```
 
 ---
@@ -127,11 +137,11 @@
 
 ```text
 .
-├── codex/prompts/                # Codex CLI 的 /xxx 触发命令
+├── codex/prompts/                # Prompt 模板（用 `-/prompts:...` 调用）
+├── bin/                          # 可选：终端 helper（安装到 ~/.codex/bin）
 ├── skills/
 │   ├── council-orchestrator/     # 编排脚本（Stage 1/2/3）
 │   └── council-chairman/         # Chairman skill（主要给 Codex “理解用”）
 └── scripts/
     └── install_codex_skill.sh    # 安装到 ~/.codex
 ```
-

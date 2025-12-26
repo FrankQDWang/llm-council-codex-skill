@@ -135,6 +135,14 @@ validate_output() {
         return 1
     fi
 
+    # Treat placeholder "[ABSENT] ..." files as invalid responses.
+    local first_line=""
+    first_line="$(head -n 1 "$file_path" 2>/dev/null || true)"
+    if [[ "$first_line" == "[ABSENT]"* ]]; then
+        echo -e "${YELLOW}$member_name: Marked absent (${first_line})${NC}" >&2
+        return 1
+    fi
+
     echo -e "${GREEN}$member_name: Response captured${NC}" >&2
     return 0
 }
@@ -216,9 +224,9 @@ check_final_report() {
 # Output: Space-separated list of file paths
 get_stage1_files() {
     local files=""
-    [[ -s "$COUNCIL_DIR/stage1_claude.txt" ]] && files="$files $COUNCIL_DIR/stage1_claude.txt"
-    [[ -s "$COUNCIL_DIR/stage1_openai.txt" ]] && files="$files $COUNCIL_DIR/stage1_openai.txt"
-    [[ -s "$COUNCIL_DIR/stage1_gemini.txt" ]] && files="$files $COUNCIL_DIR/stage1_gemini.txt"
+    validate_output "$COUNCIL_DIR/stage1_claude.txt" "Claude" >/dev/null 2>&1 && files="$files $COUNCIL_DIR/stage1_claude.txt"
+    validate_output "$COUNCIL_DIR/stage1_openai.txt" "Codex" >/dev/null 2>&1 && files="$files $COUNCIL_DIR/stage1_openai.txt"
+    validate_output "$COUNCIL_DIR/stage1_gemini.txt" "Gemini" >/dev/null 2>&1 && files="$files $COUNCIL_DIR/stage1_gemini.txt"
     echo "$files"
 }
 
@@ -238,9 +246,9 @@ get_stage2_files() {
 # Returns: Number of Stage 1 files (0-3)
 count_stage1_responses() {
     local count=0
-    [[ -s "$COUNCIL_DIR/stage1_claude.txt" ]] && ((count++)) || true
-    [[ -s "$COUNCIL_DIR/stage1_openai.txt" ]] && ((count++)) || true
-    [[ -s "$COUNCIL_DIR/stage1_gemini.txt" ]] && ((count++)) || true
+    validate_output "$COUNCIL_DIR/stage1_claude.txt" "Claude" >/dev/null 2>&1 && ((count++)) || true
+    validate_output "$COUNCIL_DIR/stage1_openai.txt" "Codex" >/dev/null 2>&1 && ((count++)) || true
+    validate_output "$COUNCIL_DIR/stage1_gemini.txt" "Gemini" >/dev/null 2>&1 && ((count++)) || true
     echo "$count"
 }
 
@@ -374,10 +382,10 @@ check_stage1_quorum() {
     count=$(count_stage1_responses)
     local min_quorum="${COUNCIL_MIN_QUORUM:-}"
     if [[ -z "$min_quorum" ]] && command -v config_get &>/dev/null; then
-        min_quorum="$(config_get "min_quorum" "2")"
+        min_quorum="$(config_get "min_quorum" "3")"
     fi
     if [[ -z "$min_quorum" ]]; then
-        min_quorum="2"
+        min_quorum="3"
     fi
 
     if [[ $count -lt $min_quorum ]]; then
@@ -421,9 +429,9 @@ get_absent_clis() {
 # Output: Space-separated list of absent member names
 get_absent_members() {
     local absent=""
-    [[ ! -s "$COUNCIL_DIR/stage1_claude.txt" ]] && absent="$absent Claude"
-    [[ ! -s "$COUNCIL_DIR/stage1_openai.txt" ]] && absent="$absent Codex"
-    [[ ! -s "$COUNCIL_DIR/stage1_gemini.txt" ]] && absent="$absent Gemini"
+    validate_output "$COUNCIL_DIR/stage1_claude.txt" "Claude" >/dev/null 2>&1 || absent="$absent Claude"
+    validate_output "$COUNCIL_DIR/stage1_openai.txt" "Codex" >/dev/null 2>&1 || absent="$absent Codex"
+    validate_output "$COUNCIL_DIR/stage1_gemini.txt" "Gemini" >/dev/null 2>&1 || absent="$absent Gemini"
     echo "$absent"
 }
 
@@ -779,7 +787,8 @@ config_list() {
         echo ""
         echo "Default values:"
         echo "  enabled_members=claude,codex,gemini"
-        echo "  min_quorum=2"
+        echo "  min_quorum=3"
+        echo "  require_all_members=1"
         echo "  max_prompt_length=100000"
         echo "  timeout=120"
     fi

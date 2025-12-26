@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat >&2 <<'USAGE'
+Usage:
+  council "your question..."
+  council < question.txt
+
+Runs the LLM Council (Stage 1/2/3) and writes results into ./.council/
+Then prints .council/final_report.md to stdout.
+USAGE
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+CODEX_HOME="${CODEX_HOME:-${HOME:-}/.codex}"
+if [[ -z "$CODEX_HOME" || ! -d "$CODEX_HOME" ]]; then
+  echo "ERROR: CODEX_HOME not found: $CODEX_HOME" >&2
+  exit 1
+fi
+
+RUNNER="$CODEX_HOME/skills/council-orchestrator/scripts/run_council.sh"
+if [[ ! -x "$RUNNER" ]]; then
+  echo "ERROR: council runner not executable: $RUNNER" >&2
+  exit 1
+fi
+
+QUERY_FILE="$(mktemp -t council-query.XXXXXX)"
+cleanup() {
+  rm -f "$QUERY_FILE" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+if [[ $# -gt 0 ]]; then
+  printf '%s' "$*" >"$QUERY_FILE"
+else
+  cat >"$QUERY_FILE"
+fi
+
+"$RUNNER" --query-file "$QUERY_FILE" --output-dir .council
+
+if [[ -s ".council/final_report.md" ]]; then
+  cat .council/final_report.md
+else
+  echo "ERROR: .council/final_report.md not found (council run may have failed)" >&2
+  exit 1
+fi
+

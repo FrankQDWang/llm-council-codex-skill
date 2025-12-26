@@ -1,4 +1,8 @@
-# /council-verify-deps
+---
+description: Verify required/optional dependencies for the council.
+---
+
+# LLM Council Verify Deps (prompt: `council-verify-deps`)
 
 Verify required/optional dependencies for LLM Council.
 
@@ -6,4 +10,3 @@ Verify required/optional dependencies for LLM Council.
 CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 "$CODEX_HOME/skills/council-orchestrator/scripts/council_verify_deps.sh"
 ```
-

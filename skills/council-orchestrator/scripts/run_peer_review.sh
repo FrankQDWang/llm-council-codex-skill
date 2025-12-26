@@ -63,6 +63,9 @@ export GEMINI_TIMEOUT="$TIMEOUT_CFG"
 # Display stage header
 stage_header "$STAGE_REVIEW" "Peer Review (Cross-Examination)"
 
+# Strict mode: require all 3 members to participate.
+STRICT_ALL_MEMBERS="$(config_get "require_all_members" "1")"
+
 # Check enablement + CLI availability
 CLAUDE_ENABLED=$(is_member_enabled "claude" && echo "yes" || echo "no")
 CODEX_ENABLED=$(is_member_enabled "codex" && echo "yes" || echo "no")
@@ -99,11 +102,28 @@ if [[ -s "$OUTPUT_DIR/stage1_gemini.txt" ]]; then
     member_status "Google Gemini" "responded" "Stage 1 response loaded"
 fi
 
-# Check quorum for peer review (need at least min_quorum, default 2)
-MIN_QUORUM="$(config_get "min_quorum" "2")"
+# Check quorum for peer review (need at least min_quorum, default 3)
+MIN_QUORUM="$(config_get "min_quorum" "3")"
 if [[ $RESPONSE_COUNT -lt $MIN_QUORUM ]]; then
     progress_msg "Peer review skipped: insufficient responses (found $RESPONSE_COUNT, need $MIN_QUORUM)"
     exit 0
+fi
+
+if [[ "$STRICT_ALL_MEMBERS" == "1" || "$STRICT_ALL_MEMBERS" == "true" ]]; then
+    if [[ "$CLAUDE_ENABLED" != "yes" || "$CODEX_ENABLED" != "yes" || "$GEMINI_ENABLED" != "yes" ]]; then
+        error_msg "Strict mode enabled (require_all_members=1): enabled_members must include claude,codex,gemini"
+        exit 1
+    fi
+    if [[ "$CLAUDE_AVAILABLE" != "yes" || "$CODEX_AVAILABLE" != "yes" || "$GEMINI_AVAILABLE" != "yes" ]]; then
+        error_msg "Strict mode enabled (require_all_members=1): all three CLIs (claude, codex, gemini) must be installed and available"
+        exit 1
+    fi
+    if ! validate_output "$OUTPUT_DIR/stage1_claude.txt" "Claude" >/dev/null 2>&1 || \
+       ! validate_output "$OUTPUT_DIR/stage1_openai.txt" "Codex" >/dev/null 2>&1 || \
+       ! validate_output "$OUTPUT_DIR/stage1_gemini.txt" "Gemini" >/dev/null 2>&1; then
+        error_msg "Strict mode enabled (require_all_members=1): expected valid Stage 1 responses from all 3 members"
+        exit 1
+    fi
 fi
 
 council_progress 2 20
@@ -270,6 +290,18 @@ if [[ -n "$PID_GEMINI" ]]; then
         SUCCEEDED="$SUCCEEDED Gemini"
     else
         FAILED="$FAILED Gemini"
+    fi
+fi
+
+# In strict mode, require all 3 review outputs.
+if [[ "$STRICT_ALL_MEMBERS" == "1" || "$STRICT_ALL_MEMBERS" == "true" ]]; then
+    missing_reviews=""
+    [[ ! -s "$OUTPUT_DIR/stage2_review_claude.txt" ]] && missing_reviews="$missing_reviews Claude"
+    [[ ! -s "$OUTPUT_DIR/stage2_review_openai.txt" ]] && missing_reviews="$missing_reviews Codex"
+    [[ ! -s "$OUTPUT_DIR/stage2_review_gemini.txt" ]] && missing_reviews="$missing_reviews Gemini"
+    if [[ -n "$missing_reviews" ]]; then
+        error_msg "Strict mode enabled (require_all_members=1): missing Stage 2 peer reviews from:$missing_reviews"
+        exit 1
     fi
 fi
 

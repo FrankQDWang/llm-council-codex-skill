@@ -58,6 +58,9 @@ export GEMINI_TIMEOUT="$TIMEOUT_CFG"
 # Display stage header
 stage_header "$STAGE_OPINION" "Opinion Collection"
 
+# Strict mode: require all 3 members to participate.
+STRICT_ALL_MEMBERS="$(config_get "require_all_members" "1")"
+
 # Check enablement + CLI availability
 CLAUDE_ENABLED=$(is_member_enabled "claude" && echo "yes" || echo "no")
 CODEX_ENABLED=$(is_member_enabled "codex" && echo "yes" || echo "no")
@@ -74,7 +77,7 @@ MEMBER_COUNT=0
 progress_msg "Available council members: $MEMBER_COUNT/3"
 council_progress 1 10
 
-# Ensure at least Claude is available
+# Enforce required members
 if [[ "$CLAUDE_ENABLED" != "yes" ]]; then
     error_msg "Claude is required but disabled in config (enabled_members)"
     exit 1
@@ -83,6 +86,34 @@ if [[ "$CLAUDE_AVAILABLE" != "yes" ]]; then
     error_msg "Claude CLI is required but not available"
     echo "Install from: https://code.claude.com/docs/en/setup" >&2
     exit 1
+fi
+
+# In strict mode, Codex + Gemini are also required.
+if [[ "$STRICT_ALL_MEMBERS" == "1" || "$STRICT_ALL_MEMBERS" == "true" ]]; then
+    if [[ "$CODEX_ENABLED" != "yes" ]]; then
+        error_msg "Strict mode enabled (require_all_members=1): Codex is required but disabled in config (enabled_members)"
+        exit 1
+    fi
+    if [[ "$CODEX_AVAILABLE" != "yes" ]]; then
+        error_msg "Strict mode enabled (require_all_members=1): Codex CLI is required but not available"
+        echo "Install from: npm install -g @openai/codex" >&2
+        exit 1
+    fi
+
+    if [[ "$GEMINI_ENABLED" != "yes" ]]; then
+        error_msg "Strict mode enabled (require_all_members=1): Gemini is required but disabled in config (enabled_members)"
+        exit 1
+    fi
+    if [[ "$GEMINI_AVAILABLE" != "yes" ]]; then
+        error_msg "Strict mode enabled (require_all_members=1): Gemini CLI is required but not available"
+        echo "Install from: npm install -g @google/gemini-cli" >&2
+        exit 1
+    fi
+
+    if [[ "$MEMBER_COUNT" -ne 3 ]]; then
+        error_msg "Strict mode enabled (require_all_members=1): Expected 3/3 available members, found $MEMBER_COUNT/3"
+        exit 1
+    fi
 fi
 
 # Track PIDs and names for parallel execution (bash 3 compatible - no associative arrays)
@@ -105,7 +136,7 @@ PID_CLAUDE=$!
 PIDS="$PIDS $PID_CLAUDE"
 CONSULTING_MEMBERS="$CONSULTING_MEMBERS Claude"
 
-# Codex (optional)
+# Codex
 if [[ "$CODEX_AVAILABLE" == "yes" ]]; then
     member_status "OpenAI Codex" "consulting"
     "$SCRIPT_DIR/query_codex.sh" "__PROMPT_FILE__:$QUERY_FILE" > "$OUTPUT_DIR/stage1_openai.txt" 2>&1 &
@@ -113,14 +144,10 @@ if [[ "$CODEX_AVAILABLE" == "yes" ]]; then
     PIDS="$PIDS $PID_CODEX"
     CONSULTING_MEMBERS="$CONSULTING_MEMBERS Codex"
 else
-    if [[ "$CODEX_ENABLED" != "yes" ]]; then
-        member_status "OpenAI Codex" "absent" "disabled by config"
-    else
-        member_status "OpenAI Codex" "absent" "CLI not installed"
-    fi
+    member_status "OpenAI Codex" "absent" "not available"
 fi
 
-# Gemini (optional)
+# Gemini
 if [[ "$GEMINI_AVAILABLE" == "yes" ]]; then
     member_status "Google Gemini" "consulting"
     "$SCRIPT_DIR/query_gemini.sh" "__PROMPT_FILE__:$QUERY_FILE" > "$OUTPUT_DIR/stage1_gemini.txt" 2>&1 &
@@ -128,11 +155,7 @@ if [[ "$GEMINI_AVAILABLE" == "yes" ]]; then
     PIDS="$PIDS $PID_GEMINI"
     CONSULTING_MEMBERS="$CONSULTING_MEMBERS Gemini"
 else
-    if [[ "$GEMINI_ENABLED" != "yes" ]]; then
-        member_status "Google Gemini" "absent" "disabled by config"
-    else
-        member_status "Google Gemini" "absent" "CLI not installed"
-    fi
+    member_status "Google Gemini" "absent" "not available"
 fi
 
 # Wait for all background jobs and track results
@@ -183,20 +206,28 @@ ABSENT_MEMBERS=""
 
 validate_output "$OUTPUT_DIR/stage1_claude.txt" "Claude" || ABSENT_MEMBERS="$ABSENT_MEMBERS Claude"
 
-if [[ "$CODEX_AVAILABLE" == "yes" ]]; then
+if [[ "$STRICT_ALL_MEMBERS" == "1" || "$STRICT_ALL_MEMBERS" == "true" ]]; then
     validate_output "$OUTPUT_DIR/stage1_openai.txt" "Codex" || ABSENT_MEMBERS="$ABSENT_MEMBERS Codex"
-fi
-
-if [[ "$GEMINI_AVAILABLE" == "yes" ]]; then
     validate_output "$OUTPUT_DIR/stage1_gemini.txt" "Gemini" || ABSENT_MEMBERS="$ABSENT_MEMBERS Gemini"
+else
+    if [[ "$CODEX_AVAILABLE" == "yes" ]]; then
+        validate_output "$OUTPUT_DIR/stage1_openai.txt" "Codex" || ABSENT_MEMBERS="$ABSENT_MEMBERS Codex"
+    fi
+    if [[ "$GEMINI_AVAILABLE" == "yes" ]]; then
+        validate_output "$OUTPUT_DIR/stage1_gemini.txt" "Gemini" || ABSENT_MEMBERS="$ABSENT_MEMBERS Gemini"
+    fi
 fi
 
 # Summary
 echo "" >&2
 council_progress 1 100
 if [[ -z "$ABSENT_MEMBERS" ]]; then
-    success_msg "Stage 1 complete: All available council members responded"
+    success_msg "Stage 1 complete: All required council members responded"
 else
+    if [[ "$STRICT_ALL_MEMBERS" == "1" || "$STRICT_ALL_MEMBERS" == "true" ]]; then
+        error_msg "Stage 1 incomplete: missing responses from:$ABSENT_MEMBERS"
+        exit 1
+    fi
     progress_msg "Stage 1 complete with absent members:$ABSENT_MEMBERS"
 fi
 
