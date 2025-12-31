@@ -56,60 +56,59 @@ fi
 query_codex() {
     local attempt=0
     local exit_code=0
+    local last_err_log=""
 
     while [[ $attempt -le $MAX_RETRIES ]]; do
         if [[ $attempt -gt 0 ]]; then
-            echo "Retry attempt $attempt..." >&2
             sleep $((5 * attempt))  # Exponential backoff: 5s, 10s
         fi
 
         # Execute Codex in non-interactive exec mode.
-        # IMPORTANT: Pass the prompt via stdin to avoid shell/argv length limits for long questions.
+        # Keep stage outputs clean by capturing ONLY the final message.
         local cmd_result=0
+        local last_msg
+        local err_log
+        last_msg="$(mktemp -t council-codex-last.XXXXXX)"
+        err_log="$(mktemp -t council-codex-err.XXXXXX)"
+
         if [[ -n "$TIMEOUT_CMD" ]]; then
             if [[ -n "$PROMPT_FILE" ]]; then
-                if $TIMEOUT_CMD "$TIMEOUT_SECONDS" codex exec --skip-git-repo-check < "$PROMPT_FILE" 2>/dev/null; then
-                    return 0
-                else
-                    cmd_result=$?
-                fi
+                $TIMEOUT_CMD "$TIMEOUT_SECONDS" codex exec --skip-git-repo-check --output-last-message "$last_msg" \
+                    < "$PROMPT_FILE" > /dev/null 2> "$err_log" || cmd_result=$?
             else
-                if printf '%s' "$PROMPT" | $TIMEOUT_CMD "$TIMEOUT_SECONDS" codex exec --skip-git-repo-check 2>/dev/null; then
-                    return 0
-                else
-                    cmd_result=$?
-                fi
+                printf '%s' "$PROMPT" | $TIMEOUT_CMD "$TIMEOUT_SECONDS" codex exec --skip-git-repo-check --output-last-message "$last_msg" \
+                    > /dev/null 2> "$err_log" || cmd_result=$?
             fi
         else
-            # No timeout command available, run without timeout
             if [[ -n "$PROMPT_FILE" ]]; then
-                if codex exec --skip-git-repo-check < "$PROMPT_FILE" 2>/dev/null; then
-                    return 0
-                else
-                    cmd_result=$?
-                fi
+                codex exec --skip-git-repo-check --output-last-message "$last_msg" \
+                    < "$PROMPT_FILE" > /dev/null 2> "$err_log" || cmd_result=$?
             else
-                if printf '%s' "$PROMPT" | codex exec --skip-git-repo-check 2>/dev/null; then
-                    return 0
-                else
-                    cmd_result=$?
-                fi
+                printf '%s' "$PROMPT" | codex exec --skip-git-repo-check --output-last-message "$last_msg" \
+                    > /dev/null 2> "$err_log" || cmd_result=$?
             fi
         fi
 
-        exit_code=$cmd_result
-
-        # Check for timeout or error
-        if [[ $exit_code -eq 124 ]]; then
-            echo "Warning: Codex CLI timed out after ${TIMEOUT_SECONDS}s" >&2
-        elif [[ $exit_code -eq 1 ]]; then
-            echo "Warning: Codex CLI returned error" >&2
+        if [[ $cmd_result -eq 0 ]] && [[ -s "$last_msg" ]]; then
+            cat "$last_msg"
+            rm -f "$last_msg" "$err_log" "$last_err_log" 2>/dev/null || true
+            return 0
         fi
+
+        rm -f "$last_msg" 2>/dev/null || true
+        [[ -n "$last_err_log" ]] && rm -f "$last_err_log" 2>/dev/null || true
+        last_err_log="$err_log"
+
+        exit_code=$cmd_result
 
         ((attempt++))
     done
 
-    echo "Error: Failed to query Codex after $((MAX_RETRIES + 1)) attempts" >&2
+    echo "[ABSENT] Codex: failed after $((MAX_RETRIES + 1)) attempts"
+    if [[ -n "$last_err_log" ]] && [[ -s "$last_err_log" ]]; then
+        tail -n 60 "$last_err_log" || true
+    fi
+    rm -f "$last_err_log" 2>/dev/null || true
     return $exit_code
 }
 

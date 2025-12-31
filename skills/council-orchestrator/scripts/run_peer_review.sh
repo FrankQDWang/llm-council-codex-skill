@@ -55,10 +55,13 @@ fi
 ORIGINAL_QUESTION="$(cat "$QUERY_FILE")"
 
 # Configure per-member timeouts from config (seconds)
-TIMEOUT_CFG="$(config_get "timeout" "120")"
-export CLAUDE_TIMEOUT="$TIMEOUT_CFG"
-export CODEX_TIMEOUT="$TIMEOUT_CFG"
-export GEMINI_TIMEOUT="$TIMEOUT_CFG"
+TIMEOUT_CFG="$(config_get "timeout" "180")"
+export CLAUDE_TIMEOUT
+export CODEX_TIMEOUT
+export GEMINI_TIMEOUT
+CLAUDE_TIMEOUT="$(config_get "timeout_claude" "$TIMEOUT_CFG")"
+CODEX_TIMEOUT="$(config_get "timeout_codex" "$TIMEOUT_CFG")"
+GEMINI_TIMEOUT="$(config_get "timeout_gemini" "$TIMEOUT_CFG")"
 
 # Display stage header
 stage_header "$STAGE_REVIEW" "Peer Review (Cross-Examination)"
@@ -78,25 +81,25 @@ GEMINI_AVAILABLE=$([[ "$GEMINI_ENABLED" == "yes" ]] && check_cli gemini && echo 
 council_progress 2 10
 progress_msg "Loading Stage 1 responses for review..."
 
-# Read Stage 1 outputs
+# Read Stage 1 outputs (ignore empty/[ABSENT] files)
 CLAUDE_RESPONSE=""
 CODEX_RESPONSE=""
 GEMINI_RESPONSE=""
 RESPONSE_COUNT=0
 
-if [[ -s "$OUTPUT_DIR/stage1_claude.txt" ]]; then
+if validate_output "$OUTPUT_DIR/stage1_claude.txt" "Claude" >/dev/null 2>&1; then
     CLAUDE_RESPONSE=$(cat "$OUTPUT_DIR/stage1_claude.txt")
     ((RESPONSE_COUNT++)) || true
     member_status "Claude" "responded" "Stage 1 response loaded"
 fi
 
-if [[ -s "$OUTPUT_DIR/stage1_openai.txt" ]]; then
+if validate_output "$OUTPUT_DIR/stage1_openai.txt" "Codex" >/dev/null 2>&1; then
     CODEX_RESPONSE=$(cat "$OUTPUT_DIR/stage1_openai.txt")
     ((RESPONSE_COUNT++)) || true
     member_status "OpenAI Codex" "responded" "Stage 1 response loaded"
 fi
 
-if [[ -s "$OUTPUT_DIR/stage1_gemini.txt" ]]; then
+if validate_output "$OUTPUT_DIR/stage1_gemini.txt" "Gemini" >/dev/null 2>&1; then
     GEMINI_RESPONSE=$(cat "$OUTPUT_DIR/stage1_gemini.txt")
     ((RESPONSE_COUNT++)) || true
     member_status "Google Gemini" "responded" "Stage 1 response loaded"
@@ -193,7 +196,7 @@ if [[ "$CLAUDE_AVAILABLE" == "yes" ]]; then
 
     if [[ -n "$REVIEW_A" ]]; then
         member_status "Claude" "reviewing" "evaluating Codex + Gemini"
-        REVIEW_PROMPT_FILE="$(mktemp "$OUTPUT_DIR/review_prompt_claude.XXXXXX.txt")"
+        REVIEW_PROMPT_FILE="$(mktemp "$OUTPUT_DIR/review_prompt_claude.XXXXXX")"
         construct_review_prompt "$REVIEW_A" "$REVIEW_B" > "$REVIEW_PROMPT_FILE"
         "$SCRIPT_DIR/query_claude.sh" "__PROMPT_FILE__:$REVIEW_PROMPT_FILE" > "$OUTPUT_DIR/stage2_review_claude.txt" 2>&1 &
         PID_CLAUDE=$!
@@ -219,7 +222,7 @@ if [[ "$CODEX_AVAILABLE" == "yes" ]]; then
 
     if [[ -n "$REVIEW_A" ]]; then
         member_status "OpenAI Codex" "reviewing" "evaluating Claude + Gemini"
-        REVIEW_PROMPT_FILE="$(mktemp "$OUTPUT_DIR/review_prompt_openai.XXXXXX.txt")"
+        REVIEW_PROMPT_FILE="$(mktemp "$OUTPUT_DIR/review_prompt_openai.XXXXXX")"
         construct_review_prompt "$REVIEW_A" "$REVIEW_B" > "$REVIEW_PROMPT_FILE"
         "$SCRIPT_DIR/query_codex.sh" "__PROMPT_FILE__:$REVIEW_PROMPT_FILE" > "$OUTPUT_DIR/stage2_review_openai.txt" 2>&1 &
         PID_CODEX=$!
@@ -245,7 +248,7 @@ if [[ "$GEMINI_AVAILABLE" == "yes" ]]; then
 
     if [[ -n "$REVIEW_A" ]]; then
         member_status "Google Gemini" "reviewing" "evaluating Claude + Codex"
-        REVIEW_PROMPT_FILE="$(mktemp "$OUTPUT_DIR/review_prompt_gemini.XXXXXX.txt")"
+        REVIEW_PROMPT_FILE="$(mktemp "$OUTPUT_DIR/review_prompt_gemini.XXXXXX")"
         construct_review_prompt "$REVIEW_A" "$REVIEW_B" > "$REVIEW_PROMPT_FILE"
         "$SCRIPT_DIR/query_gemini.sh" "__PROMPT_FILE__:$REVIEW_PROMPT_FILE" > "$OUTPUT_DIR/stage2_review_gemini.txt" 2>&1 &
         PID_GEMINI=$!

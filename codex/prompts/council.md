@@ -14,5 +14,9 @@ $ARGUMENTS
 Run the council helper (this resets `./.council/` for this run):
 
 ```bash
-~/.codex/bin/council "$ARGUMENTS"
+mkdir -p .council-query
+cat > .council-query/query.txt <<'__COUNCIL_QUERY__'
+$ARGUMENTS
+__COUNCIL_QUERY__
+~/.codex/bin/council .council-query/query.txt
 ```

@@ -50,10 +50,13 @@ if [[ "$PROMPT_LEN" -gt "$MAX_LEN" ]]; then
 fi
 
 # Configure per-member timeouts from config (seconds)
-TIMEOUT_CFG="$(config_get "timeout" "120")"
-export CLAUDE_TIMEOUT="$TIMEOUT_CFG"
-export CODEX_TIMEOUT="$TIMEOUT_CFG"
-export GEMINI_TIMEOUT="$TIMEOUT_CFG"
+TIMEOUT_CFG="$(config_get "timeout" "180")"
+export CLAUDE_TIMEOUT
+export CODEX_TIMEOUT
+export GEMINI_TIMEOUT
+CLAUDE_TIMEOUT="$(config_get "timeout_claude" "$TIMEOUT_CFG")"
+CODEX_TIMEOUT="$(config_get "timeout_codex" "$TIMEOUT_CFG")"
+GEMINI_TIMEOUT="$(config_get "timeout_gemini" "$TIMEOUT_CFG")"
 
 # Display stage header
 stage_header "$STAGE_OPINION" "Opinion Collection"

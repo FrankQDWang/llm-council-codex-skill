@@ -108,7 +108,7 @@ write_prompt_with_embedded_files() {
 }
 
 # Compose the chairman prompt with embedded file contents to avoid tool/permission prompts.
-CHAIRMAN_PROMPT_FILE="$(mktemp "$COUNCIL_DIR/chairman_prompt_codex.XXXXXX.txt")"
+CHAIRMAN_PROMPT_FILE="$(mktemp "$COUNCIL_DIR/chairman_prompt_codex.XXXXXX")"
 write_prompt_with_embedded_files "$CHAIRMAN_PROMPT_FILE"
 
 PROMPT_LEN="$(wc -c < "$CHAIRMAN_PROMPT_FILE" | tr -d '[:space:]')"
@@ -129,7 +129,7 @@ if [[ "$PROMPT_LEN" -gt "$MAX_LEN" ]]; then
     progress_msg "Codex chairman prompt was truncated to fit max_prompt_length (limit=$MAX_LEN, actual=$PROMPT_LEN, per_file_limit=$per_file_limit)"
 fi
 
-TIMEOUT_CFG="$(config_get "timeout" "120")"
+TIMEOUT_CFG="$(config_get "chairman_timeout" "$(config_get "timeout" "120")")"
 prompt_base="$(basename "$CHAIRMAN_PROMPT_FILE")"
 
 # Run Codex as chairman and capture stdout for persistence.
@@ -139,16 +139,19 @@ prompt_base="$(basename "$CHAIRMAN_PROMPT_FILE")"
         timeout "$TIMEOUT_CFG" \
             codex exec -s read-only --skip-git-repo-check \
             < "$prompt_base" \
-            > "chairman_stdout.md" 2> "chairman_stderr.log" || true
+            --output-last-message "chairman_stdout.md" \
+            > /dev/null 2> "chairman_stderr.log" || true
     elif command -v gtimeout &>/dev/null; then
         gtimeout "$TIMEOUT_CFG" \
             codex exec -s read-only --skip-git-repo-check \
             < "$prompt_base" \
-            > "chairman_stdout.md" 2> "chairman_stderr.log" || true
+            --output-last-message "chairman_stdout.md" \
+            > /dev/null 2> "chairman_stderr.log" || true
     else
         codex exec -s read-only --skip-git-repo-check \
             < "$prompt_base" \
-            > "chairman_stdout.md" 2> "chairman_stderr.log" || true
+            --output-last-message "chairman_stdout.md" \
+            > /dev/null 2> "chairman_stderr.log" || true
     fi
 )
 
@@ -160,4 +163,3 @@ fi
 
 error_msg "Codex chairman synthesis failed (no output produced). See: $COUNCIL_DIR/chairman_stderr.log"
 exit 1
-

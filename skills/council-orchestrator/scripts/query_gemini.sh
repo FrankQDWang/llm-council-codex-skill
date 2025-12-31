@@ -80,11 +80,10 @@ parse_gemini_output() {
 query_gemini() {
     local attempt=0
     local exit_code=0
-    local output=""
+    local last_err=""
 
     while [[ $attempt -le $MAX_RETRIES ]]; do
         if [[ $attempt -gt 0 ]]; then
-            echo "Retry attempt $attempt..." >&2
             sleep $((5 * attempt))  # Exponential backoff: 5s, 10s
         fi
 
@@ -92,36 +91,39 @@ query_gemini() {
         # IMPORTANT: Avoid passing long prompts via argv. Gemini's --prompt is appended
         # to stdin, so we pass an empty prompt and stream the full content via stdin.
         local cmd_result=0
+        local out
+        local err
+        out="$(mktemp -t council-gemini-out.XXXXXX)"
+        err="$(mktemp -t council-gemini-err.XXXXXX)"
+
         if [[ -n "$TIMEOUT_CMD" ]]; then
-            if output=$($TIMEOUT_CMD "$TIMEOUT_SECONDS" gemini -p "" -o text < "$PROMPT_FILE" 2>/dev/null); then
-                echo "$output"
-                return 0
-            else
-                cmd_result=$?
-            fi
+            $TIMEOUT_CMD "$TIMEOUT_SECONDS" gemini --approval-mode yolo -p "" -o text \
+                < "$PROMPT_FILE" > "$out" 2> "$err" || cmd_result=$?
         else
-            # No timeout command available, run without timeout
-            if output=$(gemini -p "" -o text < "$PROMPT_FILE" 2>/dev/null); then
-                echo "$output"
-                return 0
-            else
-                cmd_result=$?
-            fi
+            gemini --approval-mode yolo -p "" -o text \
+                < "$PROMPT_FILE" > "$out" 2> "$err" || cmd_result=$?
         fi
+
+        if [[ $cmd_result -eq 0 ]] && [[ -s "$out" ]]; then
+            cat "$out"
+            rm -f "$out" "$err" "$last_err" 2>/dev/null || true
+            return 0
+        fi
+
+        rm -f "$out" 2>/dev/null || true
+        [[ -n "$last_err" ]] && rm -f "$last_err" 2>/dev/null || true
+        last_err="$err"
 
         exit_code=$cmd_result
-
-        # Check for timeout or error
-        if [[ $exit_code -eq 124 ]]; then
-            echo "Warning: Gemini CLI timed out after ${TIMEOUT_SECONDS}s" >&2
-        elif [[ $exit_code -eq 1 ]]; then
-            echo "Warning: Gemini CLI returned error" >&2
-        fi
 
         ((attempt++))
     done
 
-    echo "Error: Failed to query Gemini after $((MAX_RETRIES + 1)) attempts" >&2
+    echo "[ABSENT] Gemini: failed after $((MAX_RETRIES + 1)) attempts"
+    if [[ -n "$last_err" ]] && [[ -s "$last_err" ]]; then
+        tail -n 60 "$last_err" || true
+    fi
+    rm -f "$last_err" 2>/dev/null || true
     return $exit_code
 }
 

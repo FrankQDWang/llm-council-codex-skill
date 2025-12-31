@@ -51,7 +51,7 @@ for f in "$COUNCIL_DIR"/stage2_review_*.txt; do
 done
 
 # Compose the chairman prompt (keep paths relative to COUNCIL_DIR for tool sandboxing).
-CHAIRMAN_PROMPT_FILE="$(mktemp "$COUNCIL_DIR/chairman_prompt.XXXXXX.txt")"
+CHAIRMAN_PROMPT_FILE="$(mktemp "$COUNCIL_DIR/chairman_prompt.XXXXXX")"
 {
     echo "You are the Council Chairman synthesizing multi-model deliberation results."
     echo ""
@@ -96,7 +96,7 @@ CHAIRMAN_PROMPT_FILE="$(mktemp "$COUNCIL_DIR/chairman_prompt.XXXXXX.txt")"
 
 # Run Claude as chairman with only Read/Write tools scoped to COUNCIL_DIR.
 # Use stdin for the prompt to avoid argv length limits.
-TIMEOUT_CFG="$(config_get "timeout" "120")"
+TIMEOUT_CFG="$(config_get "chairman_timeout" "$(config_get "timeout" "120")")"
 MODEL="${COUNCIL_CHAIRMAN_MODEL:-claude-opus-4-5-20251101}"
 
 prompt_base="$(basename "$CHAIRMAN_PROMPT_FILE")"

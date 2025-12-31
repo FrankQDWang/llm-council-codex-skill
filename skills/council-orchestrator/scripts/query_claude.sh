@@ -55,58 +55,58 @@ fi
 query_claude() {
     local attempt=0
     local exit_code=0
+    local last_err=""
 
     while [[ $attempt -le $MAX_RETRIES ]]; do
         if [[ $attempt -gt 0 ]]; then
-            echo "Retry attempt $attempt..." >&2
             sleep $((5 * attempt))  # Exponential backoff: 5s, 10s
         fi
 
         # Execute Claude in non-interactive print mode.
-        # IMPORTANT: Pass the prompt via stdin to avoid shell/argv length limits for long questions.
+        # Keep stage outputs clean by capturing stdout into a temp file.
         local cmd_result=0
+        local out
+        local err
+        out="$(mktemp -t council-claude-out.XXXXXX)"
+        err="$(mktemp -t council-claude-err.XXXXXX)"
+
         if [[ -n "$TIMEOUT_CMD" ]]; then
             if [[ -n "$PROMPT_FILE" ]]; then
-                if $TIMEOUT_CMD "$TIMEOUT_SECONDS" claude -p --output-format text < "$PROMPT_FILE" 2>/dev/null; then
-                    return 0
-                else
-                    cmd_result=$?
-                fi
+                $TIMEOUT_CMD "$TIMEOUT_SECONDS" claude -p --output-format text --no-session-persistence --tools "" \
+                    < "$PROMPT_FILE" > "$out" 2> "$err" || cmd_result=$?
             else
-                if printf '%s' "$PROMPT" | $TIMEOUT_CMD "$TIMEOUT_SECONDS" claude -p --output-format text 2>/dev/null; then
-                    return 0
-                else
-                    cmd_result=$?
-                fi
+                printf '%s' "$PROMPT" | $TIMEOUT_CMD "$TIMEOUT_SECONDS" claude -p --output-format text --no-session-persistence --tools "" \
+                    > "$out" 2> "$err" || cmd_result=$?
             fi
         else
             if [[ -n "$PROMPT_FILE" ]]; then
-                if claude -p --output-format text < "$PROMPT_FILE" 2>/dev/null; then
-                    return 0
-                else
-                    cmd_result=$?
-                fi
+                claude -p --output-format text --no-session-persistence --tools "" \
+                    < "$PROMPT_FILE" > "$out" 2> "$err" || cmd_result=$?
             else
-                if printf '%s' "$PROMPT" | claude -p --output-format text 2>/dev/null; then
-                    return 0
-                else
-                    cmd_result=$?
-                fi
+                printf '%s' "$PROMPT" | claude -p --output-format text --no-session-persistence --tools "" \
+                    > "$out" 2> "$err" || cmd_result=$?
             fi
         fi
-        exit_code=$cmd_result
 
-        # Check for timeout and other errors (exit code may vary, but we handle retryable errors)
-        if [[ $exit_code -eq 124 ]]; then
-            echo "Warning: Claude CLI timed out after ${TIMEOUT_SECONDS}s" >&2
-        elif [[ $exit_code -eq 1 ]]; then
-            echo "Warning: Claude CLI returned error" >&2
+        if [[ $cmd_result -eq 0 ]] && [[ -s "$out" ]]; then
+            cat "$out"
+            rm -f "$out" "$err" "$last_err" 2>/dev/null || true
+            return 0
         fi
+
+        rm -f "$out" 2>/dev/null || true
+        [[ -n "$last_err" ]] && rm -f "$last_err" 2>/dev/null || true
+        last_err="$err"
+        exit_code=$cmd_result
 
         ((attempt++))
     done
 
-    echo "Error: Failed to query Claude after $((MAX_RETRIES + 1)) attempts" >&2
+    echo "[ABSENT] Claude: failed after $((MAX_RETRIES + 1)) attempts"
+    if [[ -n "$last_err" ]] && [[ -s "$last_err" ]]; then
+        tail -n 60 "$last_err" || true
+    fi
+    rm -f "$last_err" 2>/dev/null || true
     return $exit_code
 }
 

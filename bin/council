@@ -6,9 +6,15 @@ usage() {
 Usage:
   council "your question..."
   council < question.txt
+  council question.txt
 
 Runs the LLM Council (Stage 1/2/3) and writes results into ./.council/
 Then prints .council/final_report.md to stdout.
+
+Notes:
+- If the sole argument is an existing file path, its contents are used as the query.
+- A per-project runtime directory is created at ./.council-runtime/ so external CLIs
+  (claude/codex/gemini) can write state under sandboxed environments.
 USAGE
 }
 
@@ -17,25 +23,98 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   exit 0
 fi
 
-CODEX_HOME="${CODEX_HOME:-${HOME:-}/.codex}"
-if [[ -z "$CODEX_HOME" || ! -d "$CODEX_HOME" ]]; then
-  echo "ERROR: CODEX_HOME not found: $CODEX_HOME" >&2
+# Keep the original Codex home for locating the council runner scripts.
+ORIG_CODEX_HOME="${CODEX_HOME:-${HOME:-}/.codex}"
+if [[ -z "$ORIG_CODEX_HOME" || ! -d "$ORIG_CODEX_HOME" ]]; then
+  echo "ERROR: CODEX_HOME not found: $ORIG_CODEX_HOME" >&2
   exit 1
 fi
 
-RUNNER="$CODEX_HOME/skills/council-orchestrator/scripts/run_council.sh"
+RUNNER="$ORIG_CODEX_HOME/skills/council-orchestrator/scripts/run_council.sh"
 if [[ ! -x "$RUNNER" ]]; then
   echo "ERROR: council runner not executable: $RUNNER" >&2
   exit 1
 fi
 
-QUERY_FILE="$(mktemp -t council-query.XXXXXX)"
+# Use a per-project runtime HOME so Claude/Codex/Gemini can write state/config.
+RUNTIME_ROOT="${COUNCIL_RUNTIME_DIR:-$PWD/.council-runtime}"
+RUNTIME_HOME="$RUNTIME_ROOT/home"
+RUNTIME_CODEX_HOME="$RUNTIME_HOME/.codex"
+
+mkdir -p "$RUNTIME_ROOT/tmp" "$RUNTIME_HOME" "$RUNTIME_CODEX_HOME" \
+  "$RUNTIME_HOME/.claude" "$RUNTIME_HOME/.gemini" \
+  "$RUNTIME_HOME/.config" "$RUNTIME_HOME/.local/state" "$RUNTIME_HOME/.local/share" "$RUNTIME_HOME/.cache"
+
+# Best-effort: seed runtime credentials/config from real home.
+REAL_HOME="${HOME:-}"
+if [[ -n "$REAL_HOME" ]]; then
+  if [[ -f "$REAL_HOME/.codex/auth.json" ]]; then
+    cp -f "$REAL_HOME/.codex/auth.json" "$RUNTIME_CODEX_HOME/auth.json" 2>/dev/null || true
+  fi
+  if [[ -f "$REAL_HOME/.codex/config.toml" ]]; then
+    cp -f "$REAL_HOME/.codex/config.toml" "$RUNTIME_CODEX_HOME/config.toml" 2>/dev/null || true
+  fi
+  if [[ -d "$REAL_HOME/.claude" ]]; then
+    mkdir -p "$RUNTIME_HOME/.claude"
+    cp -R "$REAL_HOME/.claude/." "$RUNTIME_HOME/.claude/" 2>/dev/null || true
+  fi
+  if [[ -d "$REAL_HOME/.gemini" ]]; then
+    mkdir -p "$RUNTIME_HOME/.gemini"
+    cp -R "$REAL_HOME/.gemini/." "$RUNTIME_HOME/.gemini/" 2>/dev/null || true
+  fi
+fi
+
+# Redirect all tool state/config writes into the runtime directory.
+export HOME="$RUNTIME_HOME"
+export CODEX_HOME="$RUNTIME_CODEX_HOME"
+export XDG_CONFIG_HOME="$RUNTIME_HOME/.config"
+export XDG_STATE_HOME="$RUNTIME_HOME/.local/state"
+export XDG_DATA_HOME="$RUNTIME_HOME/.local/share"
+export XDG_CACHE_HOME="$RUNTIME_HOME/.cache"
+
+COUNCIL_CONFIG_FILE_ORIG="${COUNCIL_CONFIG_FILE:-}"
+export COUNCIL_CONFIG_FILE="${COUNCIL_CONFIG_FILE:-$RUNTIME_ROOT/council.config}"
+
+# Network: some environments require a local proxy (e.g. 127.0.0.1:7890) to access Google endpoints.
+# Auto-detect and set a proxy for the council run if available.
+if [[ -n "${COUNCIL_PROXY_URL:-}" ]]; then
+  export HTTP_PROXY="$COUNCIL_PROXY_URL"
+  export HTTPS_PROXY="$COUNCIL_PROXY_URL"
+  export ALL_PROXY="${COUNCIL_PROXY_URL}"
+elif command -v nc >/dev/null 2>&1 && nc -z 127.0.0.1 7890 >/dev/null 2>&1; then
+  export HTTP_PROXY="http://127.0.0.1:7890"
+  export HTTPS_PROXY="http://127.0.0.1:7890"
+  export ALL_PROXY="http://127.0.0.1:7890"
+fi
+
+# Seed a default council config.
+# - Strict 3/3 by default (require_all_members=1, min_quorum=3).
+# - Per-member timeouts + longer chairman timeout.
+# - If the user explicitly provides COUNCIL_CONFIG_FILE, do not override it.
+if [[ -z "$COUNCIL_CONFIG_FILE_ORIG" ]]; then
+  cat >"$COUNCIL_CONFIG_FILE" <<'EOF_CFG'
+enabled_members=claude,codex,gemini
+require_all_members=1
+min_quorum=3
+timeout=180
+timeout_claude=180
+timeout_codex=180
+timeout_gemini=180
+chairman_timeout=1200
+max_prompt_length=200000
+EOF_CFG
+fi
+
+QUERY_FILE="$(mktemp "$RUNTIME_ROOT/tmp/council-query.XXXXXX")"
 cleanup() {
   rm -f "$QUERY_FILE" 2>/dev/null || true
 }
 trap cleanup EXIT
 
-if [[ $# -gt 0 ]]; then
+# Build query content.
+if [[ $# -eq 1 ]] && [[ -f "$1" ]]; then
+  cp -f "$1" "$QUERY_FILE"
+elif [[ $# -gt 0 ]]; then
   printf '%s' "$*" >"$QUERY_FILE"
 else
   cat >"$QUERY_FILE"
@@ -49,4 +128,3 @@ else
   echo "ERROR: .council/final_report.md not found (council run may have failed)" >&2
   exit 1
 fi
-
