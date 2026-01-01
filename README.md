@@ -99,7 +99,47 @@
 - `require_all_members`：是否强制 3/3（默认 1；为 0 时允许缺席成员但会降级运行）
 - `chairman_provider`：Stage 3 综合裁决使用哪个 CLI（`codex|claude|auto`，默认 `codex`）
 - `timeout`：每个 CLI 调用超时（秒）
+- `timeout_claude` / `timeout_codex` / `timeout_gemini`：分别为每个成员设置超时（秒）
+- `chairman_timeout`：Stage 3（chairman）超时（秒）
 - `max_prompt_length`：最大输入字符数（默认较大；超长问题可继续调高）
+
+---
+
+## 网络与代理（Proxy）
+
+部分网络环境下直连 Google 端点会失败，导致 `gemini` 超时，从而在严格 `require_all_members=1` 时整个 Council 失败。
+
+推荐两种做法（二选一）：
+
+1) 通过环境变量指定代理（对所有调用有效）：
+
+```bash
+COUNCIL_PROXY_URL="http://127.0.0.1:7890" ~/.codex/bin/council "你的问题"
+```
+
+2) 在 `~/.council/config` 里写入代理（持久化）：
+
+```text
+proxy_url=http://127.0.0.1:7890
+```
+
+可选：启用自动探测本地代理端口（仅当未配置任何代理时生效）：
+
+```bash
+COUNCIL_AUTO_PROXY=1 ~/.codex/bin/council "你的问题"
+```
+
+---
+
+## 沙箱兼容（Codex Tool Execution）
+
+当 Council 由 Codex CLI 在受限环境中触发时，外部 CLI 可能无法写入真实的 `$HOME`。此时建议启用运行时 HOME 隔离：
+
+```bash
+COUNCIL_RUNTIME_HOME=1 ~/.codex/bin/council "你的问题"
+```
+
+`-/prompts:council` 已默认使用 `COUNCIL_RUNTIME_HOME=1`。
 
 ---
 

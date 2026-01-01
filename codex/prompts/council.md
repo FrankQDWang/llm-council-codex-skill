@@ -18,5 +18,5 @@ mkdir -p .council-query
 cat > .council-query/query.txt <<'__COUNCIL_QUERY__'
 $ARGUMENTS
 __COUNCIL_QUERY__
-~/.codex/bin/council .council-query/query.txt
+COUNCIL_RUNTIME_HOME=1 ~/.codex/bin/council .council-query/query.txt
 ```

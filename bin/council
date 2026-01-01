@@ -13,8 +13,9 @@ Then prints .council/final_report.md to stdout.
 
 Notes:
 - If the sole argument is an existing file path, its contents are used as the query.
-- A per-project runtime directory is created at ./.council-runtime/ so external CLIs
-  (claude/codex/gemini) can write state under sandboxed environments.
+- If you need sandbox-friendly isolation for external CLIs (claude/codex/gemini), set:
+    COUNCIL_RUNTIME_HOME=1
+  This will create a per-project runtime directory at ./.council-runtime/ for state/config writes.
 USAGE
 }
 
@@ -22,6 +23,12 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   usage
   exit 0
 fi
+
+# Snapshot original proxy env (Codex tool execution may strip these).
+ORIG_HTTP_PROXY="${HTTP_PROXY:-${http_proxy:-}}"
+ORIG_HTTPS_PROXY="${HTTPS_PROXY:-${https_proxy:-}}"
+ORIG_ALL_PROXY="${ALL_PROXY:-${all_proxy:-}}"
+ORIG_NO_PROXY="${NO_PROXY:-${no_proxy:-}}"
 
 # Keep the original Codex home for locating the council runner scripts.
 ORIG_CODEX_HOME="${CODEX_HOME:-${HOME:-}/.codex}"
@@ -36,66 +43,105 @@ if [[ ! -x "$RUNNER" ]]; then
   exit 1
 fi
 
-# Use a per-project runtime HOME so Claude/Codex/Gemini can write state/config.
+# Optional sandbox-friendly runtime HOME isolation.
+USE_RUNTIME_HOME=0
+if [[ -n "${COUNCIL_RUNTIME_DIR:-}" || "${COUNCIL_RUNTIME_HOME:-}" == "1" || "${COUNCIL_RUNTIME_HOME:-}" == "true" ]]; then
+  USE_RUNTIME_HOME=1
+fi
+
 RUNTIME_ROOT="${COUNCIL_RUNTIME_DIR:-$PWD/.council-runtime}"
-RUNTIME_HOME="$RUNTIME_ROOT/home"
-RUNTIME_CODEX_HOME="$RUNTIME_HOME/.codex"
+QUERY_TMP_DIR="${TMPDIR:-/tmp}"
 
-mkdir -p "$RUNTIME_ROOT/tmp" "$RUNTIME_HOME" "$RUNTIME_CODEX_HOME" \
-  "$RUNTIME_HOME/.claude" "$RUNTIME_HOME/.gemini" \
-  "$RUNTIME_HOME/.config" "$RUNTIME_HOME/.local/state" "$RUNTIME_HOME/.local/share" "$RUNTIME_HOME/.cache"
+if [[ $USE_RUNTIME_HOME -eq 1 ]]; then
+  RUNTIME_HOME="$RUNTIME_ROOT/home"
+  RUNTIME_CODEX_HOME="$RUNTIME_HOME/.codex"
+  QUERY_TMP_DIR="$RUNTIME_ROOT/tmp"
 
-# Best-effort: seed runtime credentials/config from real home.
-REAL_HOME="${HOME:-}"
-if [[ -n "$REAL_HOME" ]]; then
-  if [[ -f "$REAL_HOME/.codex/auth.json" ]]; then
-    cp -f "$REAL_HOME/.codex/auth.json" "$RUNTIME_CODEX_HOME/auth.json" 2>/dev/null || true
+  mkdir -p "$QUERY_TMP_DIR" "$RUNTIME_HOME" "$RUNTIME_CODEX_HOME" \
+    "$RUNTIME_HOME/.claude" "$RUNTIME_HOME/.gemini" "$RUNTIME_HOME/.council" \
+    "$RUNTIME_HOME/.config" "$RUNTIME_HOME/.local/state" "$RUNTIME_HOME/.local/share" "$RUNTIME_HOME/.cache"
+
+  # Best-effort: seed runtime credentials/config from real home.
+  REAL_HOME="${HOME:-}"
+  if [[ -n "$REAL_HOME" ]]; then
+    if [[ -f "$REAL_HOME/.codex/auth.json" ]]; then
+      cp -f "$REAL_HOME/.codex/auth.json" "$RUNTIME_CODEX_HOME/auth.json" 2>/dev/null || true
+    fi
+    if [[ -f "$REAL_HOME/.codex/config.toml" ]]; then
+      cp -f "$REAL_HOME/.codex/config.toml" "$RUNTIME_CODEX_HOME/config.toml" 2>/dev/null || true
+    fi
+    if [[ -d "$REAL_HOME/.claude" ]]; then
+      mkdir -p "$RUNTIME_HOME/.claude"
+      cp -R "$REAL_HOME/.claude/." "$RUNTIME_HOME/.claude/" 2>/dev/null || true
+    fi
+    if [[ -d "$REAL_HOME/.gemini" ]]; then
+      mkdir -p "$RUNTIME_HOME/.gemini"
+      cp -R "$REAL_HOME/.gemini/." "$RUNTIME_HOME/.gemini/" 2>/dev/null || true
+    fi
+    if [[ -f "$REAL_HOME/.council/config" ]]; then
+      mkdir -p "$RUNTIME_HOME/.council"
+      cp -f "$REAL_HOME/.council/config" "$RUNTIME_HOME/.council/config" 2>/dev/null || true
+    fi
   fi
-  if [[ -f "$REAL_HOME/.codex/config.toml" ]]; then
-    cp -f "$REAL_HOME/.codex/config.toml" "$RUNTIME_CODEX_HOME/config.toml" 2>/dev/null || true
-  fi
-  if [[ -d "$REAL_HOME/.claude" ]]; then
-    mkdir -p "$RUNTIME_HOME/.claude"
-    cp -R "$REAL_HOME/.claude/." "$RUNTIME_HOME/.claude/" 2>/dev/null || true
-  fi
-  if [[ -d "$REAL_HOME/.gemini" ]]; then
-    mkdir -p "$RUNTIME_HOME/.gemini"
-    cp -R "$REAL_HOME/.gemini/." "$RUNTIME_HOME/.gemini/" 2>/dev/null || true
-  fi
+
+  # Redirect external CLI state/config writes into the runtime directory.
+  export HOME="$RUNTIME_HOME"
+  export CODEX_HOME="$RUNTIME_CODEX_HOME"
+  export XDG_CONFIG_HOME="$RUNTIME_HOME/.config"
+  export XDG_STATE_HOME="$RUNTIME_HOME/.local/state"
+  export XDG_DATA_HOME="$RUNTIME_HOME/.local/share"
+  export XDG_CACHE_HOME="$RUNTIME_HOME/.cache"
 fi
 
-# Redirect all tool state/config writes into the runtime directory.
-export HOME="$RUNTIME_HOME"
-export CODEX_HOME="$RUNTIME_CODEX_HOME"
-export XDG_CONFIG_HOME="$RUNTIME_HOME/.config"
-export XDG_STATE_HOME="$RUNTIME_HOME/.local/state"
-export XDG_DATA_HOME="$RUNTIME_HOME/.local/share"
-export XDG_CACHE_HOME="$RUNTIME_HOME/.cache"
-
+# Council config file: default is ~/.council/config (within the effective HOME).
 COUNCIL_CONFIG_FILE_ORIG="${COUNCIL_CONFIG_FILE:-}"
-export COUNCIL_CONFIG_FILE="${COUNCIL_CONFIG_FILE:-$RUNTIME_ROOT/council.config}"
+export COUNCIL_CONFIG_FILE="${COUNCIL_CONFIG_FILE:-$HOME/.council/config}"
 
-# Network: some environments require a local proxy (e.g. 127.0.0.1:7890) to access Google endpoints.
-# Auto-detect and set a proxy for the council run if available.
-if [[ -n "${COUNCIL_PROXY_URL:-}" ]]; then
-  export HTTP_PROXY="$COUNCIL_PROXY_URL"
-  export HTTPS_PROXY="$COUNCIL_PROXY_URL"
-  export ALL_PROXY="${COUNCIL_PROXY_URL}"
-elif command -v nc >/dev/null 2>&1 && nc -z 127.0.0.1 7890 >/dev/null 2>&1; then
-  export HTTP_PROXY="http://127.0.0.1:7890"
-  export HTTPS_PROXY="http://127.0.0.1:7890"
-  export ALL_PROXY="http://127.0.0.1:7890"
+# Proxy selection (for environments where Google endpoints require a proxy).
+# Precedence:
+#  1) COUNCIL_PROXY_URL env
+#  2) proxy_url in COUNCIL_CONFIG_FILE (key=value)
+#  3) inherited proxy env (if present)
+#  4) optional auto-detect (COUNCIL_AUTO_PROXY=1) on common local ports
+proxy_url="${COUNCIL_PROXY_URL:-}"
+if [[ -z "$proxy_url" && -f "$COUNCIL_CONFIG_FILE" ]]; then
+  proxy_url="$(grep '^proxy_url=' "$COUNCIL_CONFIG_FILE" 2>/dev/null | head -n 1 | cut -d'=' -f2- || true)"
 fi
 
-# Seed a default council config.
-# - Strict 3/3 by default (require_all_members=1, min_quorum=3).
-# - Per-member timeouts + longer chairman timeout.
-# - If the user explicitly provides COUNCIL_CONFIG_FILE, do not override it.
-if [[ -z "$COUNCIL_CONFIG_FILE_ORIG" ]]; then
+if [[ -n "$proxy_url" ]]; then
+  export HTTP_PROXY="$proxy_url"
+  export HTTPS_PROXY="$proxy_url"
+  export ALL_PROXY="$proxy_url"
+else
+  if [[ -n "$ORIG_HTTP_PROXY" && -z "${HTTP_PROXY:-}" ]]; then export HTTP_PROXY="$ORIG_HTTP_PROXY"; fi
+  if [[ -n "$ORIG_HTTPS_PROXY" && -z "${HTTPS_PROXY:-}" ]]; then export HTTPS_PROXY="$ORIG_HTTPS_PROXY"; fi
+  if [[ -n "$ORIG_ALL_PROXY" && -z "${ALL_PROXY:-}" ]]; then export ALL_PROXY="$ORIG_ALL_PROXY"; fi
+  if [[ -n "$ORIG_NO_PROXY" && -z "${NO_PROXY:-}" ]]; then export NO_PROXY="$ORIG_NO_PROXY"; fi
+
+  if [[ -z "${HTTPS_PROXY:-}" && -z "${HTTP_PROXY:-}" && -n "${COUNCIL_AUTO_PROXY:-}" ]]; then
+    if [[ "${COUNCIL_AUTO_PROXY}" == "1" || "${COUNCIL_AUTO_PROXY}" == "true" ]]; then
+      if command -v nc >/dev/null 2>&1; then
+        for port in 7890 7891 1080 8080 3128; do
+          if nc -z 127.0.0.1 "$port" >/dev/null 2>&1; then
+            export HTTP_PROXY="http://127.0.0.1:$port"
+            export HTTPS_PROXY="http://127.0.0.1:$port"
+            export ALL_PROXY="http://127.0.0.1:$port"
+            break
+          fi
+        done
+      fi
+    fi
+  fi
+fi
+
+# Default strict 3/3 config (only if the user didn't provide a config file override
+# AND no config file exists yet).
+if [[ -z "$COUNCIL_CONFIG_FILE_ORIG" && ! -f "$COUNCIL_CONFIG_FILE" ]]; then
+  mkdir -p "$(dirname "$COUNCIL_CONFIG_FILE")"
   cat >"$COUNCIL_CONFIG_FILE" <<'EOF_CFG'
 enabled_members=claude,codex,gemini
-require_all_members=1
 min_quorum=3
+require_all_members=1
 timeout=180
 timeout_claude=180
 timeout_codex=180
@@ -105,7 +151,7 @@ max_prompt_length=200000
 EOF_CFG
 fi
 
-QUERY_FILE="$(mktemp "$RUNTIME_ROOT/tmp/council-query.XXXXXX")"
+QUERY_FILE="$(mktemp "$QUERY_TMP_DIR/council-query.XXXXXX")"
 cleanup() {
   rm -f "$QUERY_FILE" 2>/dev/null || true
 }
