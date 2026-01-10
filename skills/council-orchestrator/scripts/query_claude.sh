@@ -72,18 +72,22 @@ query_claude() {
 
         if [[ -n "$TIMEOUT_CMD" ]]; then
             if [[ -n "$PROMPT_FILE" ]]; then
-                $TIMEOUT_CMD "$TIMEOUT_SECONDS" claude -p --output-format text --no-session-persistence --tools "" \
+                $TIMEOUT_CMD "$TIMEOUT_SECONDS" claude -p --output-format text --no-session-persistence \
+                    --permission-mode dontAsk --tools "Read,Bash" --add-dir "$PWD" \
                     < "$PROMPT_FILE" > "$out" 2> "$err" || cmd_result=$?
             else
-                printf '%s' "$PROMPT" | $TIMEOUT_CMD "$TIMEOUT_SECONDS" claude -p --output-format text --no-session-persistence --tools "" \
+                printf '%s' "$PROMPT" | $TIMEOUT_CMD "$TIMEOUT_SECONDS" claude -p --output-format text --no-session-persistence \
+                    --permission-mode dontAsk --tools "Read,Bash" --add-dir "$PWD" \
                     > "$out" 2> "$err" || cmd_result=$?
             fi
         else
             if [[ -n "$PROMPT_FILE" ]]; then
-                claude -p --output-format text --no-session-persistence --tools "" \
+                claude -p --output-format text --no-session-persistence \
+                    --permission-mode dontAsk --tools "Read,Bash" --add-dir "$PWD" \
                     < "$PROMPT_FILE" > "$out" 2> "$err" || cmd_result=$?
             else
-                printf '%s' "$PROMPT" | claude -p --output-format text --no-session-persistence --tools "" \
+                printf '%s' "$PROMPT" | claude -p --output-format text --no-session-persistence \
+                    --permission-mode dontAsk --tools "Read,Bash" --add-dir "$PWD" \
                     > "$out" 2> "$err" || cmd_result=$?
             fi
         fi

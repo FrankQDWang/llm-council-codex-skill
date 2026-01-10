@@ -71,20 +71,30 @@ query_codex() {
         last_msg="$(mktemp -t council-codex-last.XXXXXX)"
         err_log="$(mktemp -t council-codex-err.XXXXXX)"
 
+        # Force faster/consistent settings for council runs:
+        # - read-only sandbox is sufficient for repo inspection
+        # - never ask for approval (non-interactive)
+        # - lower reasoning effort to reduce latency/cost for long prompts
+        # NOTE: These overrides only affect this council query and do not modify user config.
+        local common_args
+        common_args=(exec -s read-only -C "$PWD" --skip-git-repo-check \
+            -c 'model_reasoning_effort="low"' -c 'model_reasoning_summaries="none"' \
+            --output-last-message "$last_msg")
+
         if [[ -n "$TIMEOUT_CMD" ]]; then
             if [[ -n "$PROMPT_FILE" ]]; then
-                $TIMEOUT_CMD "$TIMEOUT_SECONDS" codex exec --skip-git-repo-check --output-last-message "$last_msg" \
+                $TIMEOUT_CMD "$TIMEOUT_SECONDS" codex -a never "${common_args[@]}" \
                     < "$PROMPT_FILE" > /dev/null 2> "$err_log" || cmd_result=$?
             else
-                printf '%s' "$PROMPT" | $TIMEOUT_CMD "$TIMEOUT_SECONDS" codex exec --skip-git-repo-check --output-last-message "$last_msg" \
+                printf '%s' "$PROMPT" | $TIMEOUT_CMD "$TIMEOUT_SECONDS" codex -a never "${common_args[@]}" \
                     > /dev/null 2> "$err_log" || cmd_result=$?
             fi
         else
             if [[ -n "$PROMPT_FILE" ]]; then
-                codex exec --skip-git-repo-check --output-last-message "$last_msg" \
+                codex -a never "${common_args[@]}" \
                     < "$PROMPT_FILE" > /dev/null 2> "$err_log" || cmd_result=$?
             else
-                printf '%s' "$PROMPT" | codex exec --skip-git-repo-check --output-last-message "$last_msg" \
+                printf '%s' "$PROMPT" | codex -a never "${common_args[@]}" \
                     > /dev/null 2> "$err_log" || cmd_result=$?
             fi
         fi

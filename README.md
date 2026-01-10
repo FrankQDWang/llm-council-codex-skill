@@ -123,7 +123,9 @@ COUNCIL_PROXY_URL="http://127.0.0.1:7890" ~/.codex/bin/council "你的问题"
 proxy_url=http://127.0.0.1:7890
 ```
 
-可选：启用自动探测本地代理端口（仅当未配置任何代理时生效）：
+默认：若未配置任何代理且本机 `127.0.0.1:7890` 可连通，会自动使用它作为代理。
+
+可选：启用扩展的自动探测本地代理端口（仅当未配置任何代理时生效）：
 
 ```bash
 COUNCIL_AUTO_PROXY=1 ~/.codex/bin/council "你的问题"
@@ -173,6 +175,13 @@ COUNCIL_RUNTIME_HOME=1 ~/.codex/bin/council "你的问题"
 ```
 
 ---
+
+## 仓库访问（Read-Only）
+
+为满足“必须能读仓库文件”的审查要求，本仓库的 council 运行方式会给各成员提供当前工作目录的只读访问能力：
+- **Claude**：启用 `Read,Bash` 工具并 `--add-dir "$PWD"`，用于读取指定路径与检索定位行号（不会编辑文件）。
+- **Gemini**：以 `--sandbox --include-directories "$PWD"` 运行，并开启 YOLO 自动批准（用于只读工具调用）。
+- **Codex**：以 `exec -s read-only -C "$PWD" -a never` 运行（只读沙箱、非交互），并默认使用 `model_reasoning_effort="low"` 以降低长问题延迟。
 
 ## 目录结构
 

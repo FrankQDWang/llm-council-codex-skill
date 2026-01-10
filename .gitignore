@@ -3,3 +3,16 @@
 node_modules/
 dist/
 *.log
+
+# council run artifacts
+.council/
+.council-query/
+.council-runtime/
+.council-*.txt
+.council-*.out
+.council-*.err
+.council-smoke.*
+
+# local Codex/CLI run artifacts when CODEX_HOME points to repo
+sessions/
+skills/.system/

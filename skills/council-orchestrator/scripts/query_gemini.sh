@@ -97,10 +97,10 @@ query_gemini() {
         err="$(mktemp -t council-gemini-err.XXXXXX)"
 
         if [[ -n "$TIMEOUT_CMD" ]]; then
-            $TIMEOUT_CMD "$TIMEOUT_SECONDS" gemini --approval-mode yolo -p "" -o text \
+            $TIMEOUT_CMD "$TIMEOUT_SECONDS" gemini --sandbox --approval-mode yolo --include-directories "$PWD" -p "" -o text \
                 < "$PROMPT_FILE" > "$out" 2> "$err" || cmd_result=$?
         else
-            gemini --approval-mode yolo -p "" -o text \
+            gemini --sandbox --approval-mode yolo --include-directories "$PWD" -p "" -o text \
                 < "$PROMPT_FILE" > "$out" 2> "$err" || cmd_result=$?
         fi
 

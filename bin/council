@@ -118,10 +118,18 @@ else
   if [[ -n "$ORIG_ALL_PROXY" && -z "${ALL_PROXY:-}" ]]; then export ALL_PROXY="$ORIG_ALL_PROXY"; fi
   if [[ -n "$ORIG_NO_PROXY" && -z "${NO_PROXY:-}" ]]; then export NO_PROXY="$ORIG_NO_PROXY"; fi
 
-  if [[ -z "${HTTPS_PROXY:-}" && -z "${HTTP_PROXY:-}" && -n "${COUNCIL_AUTO_PROXY:-}" ]]; then
-    if [[ "${COUNCIL_AUTO_PROXY}" == "1" || "${COUNCIL_AUTO_PROXY}" == "true" ]]; then
+  # Best-effort local proxy detection:
+  # - If the user already has proxy env configured, keep it.
+  # - If not, but a local proxy is listening on the common 127.0.0.1:7890 port, use it.
+  # - If COUNCIL_AUTO_PROXY=1, scan a small set of common ports.
+  if [[ -z "${HTTPS_PROXY:-}" && -z "${HTTP_PROXY:-}" ]]; then
+    if command -v nc >/dev/null 2>&1 && nc -z 127.0.0.1 7890 >/dev/null 2>&1; then
+      export HTTP_PROXY="http://127.0.0.1:7890"
+      export HTTPS_PROXY="http://127.0.0.1:7890"
+      export ALL_PROXY="http://127.0.0.1:7890"
+    elif [[ -n "${COUNCIL_AUTO_PROXY:-}" && ( "${COUNCIL_AUTO_PROXY}" == "1" || "${COUNCIL_AUTO_PROXY}" == "true" ) ]]; then
       if command -v nc >/dev/null 2>&1; then
-        for port in 7890 7891 1080 8080 3128; do
+        for port in 7891 1080 8080 3128; do
           if nc -z 127.0.0.1 "$port" >/dev/null 2>&1; then
             export HTTP_PROXY="http://127.0.0.1:$port"
             export HTTPS_PROXY="http://127.0.0.1:$port"
