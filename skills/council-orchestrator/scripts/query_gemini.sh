@@ -15,6 +15,17 @@ set -euo pipefail
 TIMEOUT_SECONDS="${GEMINI_TIMEOUT:-120}"
 MAX_RETRIES="${GEMINI_MAX_RETRIES:-1}"
 
+# Best-effort proxy auto-detect (helps in environments where Google endpoints require a local proxy).
+# `~/.codex/bin/council` typically sets these, but this script can also be run directly.
+if [[ -z "${HTTP_PROXY:-}" ]] && command -v nc >/dev/null 2>&1 && nc -z 127.0.0.1 7890 >/dev/null 2>&1; then
+    export HTTP_PROXY="http://127.0.0.1:7890"
+    export HTTPS_PROXY="http://127.0.0.1:7890"
+    export ALL_PROXY="http://127.0.0.1:7890"
+    export http_proxy="$HTTP_PROXY"
+    export https_proxy="$HTTPS_PROXY"
+    export all_proxy="$ALL_PROXY"
+fi
+
 # Find timeout command (macOS uses gtimeout from coreutils, Linux uses timeout)
 TIMEOUT_CMD=""
 if command -v timeout &>/dev/null; then
@@ -81,6 +92,7 @@ query_gemini() {
     local attempt=0
     local exit_code=0
     local last_err=""
+    local wrapped_prompt=""
 
     while [[ $attempt -le $MAX_RETRIES ]]; do
         if [[ $attempt -gt 0 ]]; then
@@ -95,14 +107,28 @@ query_gemini() {
         local err
         out="$(mktemp -t council-gemini-out.XXXXXX)"
         err="$(mktemp -t council-gemini-err.XXXXXX)"
+        wrapped_prompt="$(mktemp -t council-gemini-wrapped.XXXXXX)"
+
+        cat >"$wrapped_prompt" <<'__COUNCIL_GEMINI_INSTRUCTIONS__'
+[COUNCIL OUTPUT REQUIREMENTS]
+- Output ONLY the final report/review content.
+- Do NOT include planning text like “I will …”, “I’m going to …”, or step-by-step tool usage narration.
+- Do NOT claim to have edited files, run commands, or produced test results unless you explicitly include the exact command and its captured output.
+- If information is missing, state what you could not verify.
+__COUNCIL_GEMINI_INSTRUCTIONS__
+        printf '\n\n' >>"$wrapped_prompt"
+        cat "$PROMPT_FILE" >>"$wrapped_prompt"
 
         if [[ -n "$TIMEOUT_CMD" ]]; then
             $TIMEOUT_CMD "$TIMEOUT_SECONDS" gemini --sandbox --approval-mode yolo --include-directories "$PWD" -p "" -o text \
-                < "$PROMPT_FILE" > "$out" 2> "$err" || cmd_result=$?
+                < "$wrapped_prompt" > "$out" 2> "$err" || cmd_result=$?
         else
             gemini --sandbox --approval-mode yolo --include-directories "$PWD" -p "" -o text \
-                < "$PROMPT_FILE" > "$out" 2> "$err" || cmd_result=$?
+                < "$wrapped_prompt" > "$out" 2> "$err" || cmd_result=$?
         fi
+
+        rm -f "$wrapped_prompt" 2>/dev/null || true
+        wrapped_prompt=""
 
         if [[ $cmd_result -eq 0 ]] && [[ -s "$out" ]]; then
             cat "$out"
